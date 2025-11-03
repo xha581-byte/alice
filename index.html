@@ -6,33 +6,23 @@
   <title>Telegram Bot — Control Panel</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    :root{
-      color-scheme: light dark;
-    }
+    :root{ color-scheme: light dark; }
     html,body{height:100%}
-    /* Apple-like typography */
     body{font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif}
-    /* Frosted glass card */
     .glass{backdrop-filter: saturate(180%) blur(18px); -webkit-backdrop-filter: saturate(180%) blur(18px)}
-    /* Soft gradient background reminiscent of apple.com sections */
     .bg-apple{
       background: radial-gradient(1200px 800px at 100% 0%, rgba(56,189,248,.18), transparent 60%),
                   radial-gradient(1200px 800px at 0% 100%, rgba(167,139,250,.14), transparent 60%),
                   linear-gradient(180deg, rgba(0,0,0,.03), transparent 40%);
     }
-    /* Subtle hairline borders */
     .hairline{border: 1px solid rgba(255,255,255,.12); border-color: rgb(228 228 231 / .6)}
-    @media (prefers-color-scheme: dark){
-      .hairline{border-color: rgb(63 63 70 / .6)}
-    }
-    /* Buttons micro-interactions */
+    @media (prefers-color-scheme: dark){ .hairline{border-color: rgb(63 63 70 / .6)} }
     .btn{transition: transform .15s ease, filter .2s ease}
     .btn:active{transform: translateY(1px) scale(.99)}
-    /* Focus rings */
     .ring-focus:focus{outline: none; box-shadow: 0 0 0 4px rgba(59,130,246,.35)}
   </style>
   <script>
-    // Toasts
+    // ------------ Toasts
     function toast(msg, type = "info") {
       const colors = {info: "bg-blue-600", success: "bg-green-600", warn: "bg-amber-600", error: "bg-red-600"};
       const el = document.createElement("div");
@@ -42,6 +32,7 @@
       setTimeout(()=>{el.style.opacity=0; setTimeout(()=>el.remove(),250)}, 2200);
     }
 
+    // ------------ Core API helper
     async function apiCall(token, method, payload) {
       const url = `https://api.telegram.org/bot${token}/${method}`;
       const res = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload || {})});
@@ -50,6 +41,7 @@
       return data.result ?? data;
     }
 
+    // ------------ Local prefs
     function savePrefs() {
       const token = document.getElementById("botToken").value.trim();
       const chatId = document.getElementById("chatId").value.trim();
@@ -67,9 +59,13 @@
       document.getElementById("botToken").value = token;
       document.getElementById("chatId").value = chatId;
       document.getElementById("parseMode").value = parseMode;
+      // Auto-reply stored state
+      try{ rules = JSON.parse(localStorage.getItem('tg_rules')||'[]'); }catch{ rules = []; }
+      renderRules();
       if (token) fetchMe();
     }
 
+    // ------------ Bot status
     async function fetchMe() {
       const token = document.getElementById("botToken").value.trim();
       const pill = document.getElementById("statusPill");
@@ -80,6 +76,7 @@
         const me = await apiCall(token, "getMe", {});
         status.innerHTML = `Connected as <b>${me.first_name || 'Bot'}</b> <span class="text-zinc-400">@${me.username || 'unknown'}</span>`;
         pill.className = pillBase + ' bg-emerald-500/90 text-white';
+        selfUser = me; // cache
         toast("Bot connected", "success");
       } catch (e) {
         status.innerHTML = `<span class="text-red-600">${e.message}</span>`;
@@ -88,6 +85,7 @@
       }
     }
 
+    // ------------ Senders
     async function sendMessage() {
       const token = document.getElementById("botToken").value.trim();
       const chatId = document.getElementById("chatId").value.trim();
@@ -125,6 +123,133 @@
       finally{ btn.disabled=false; btn.classList.remove("opacity-60"); }
     }
 
+    // ------------ Auto Reply Engine (getUpdates polling)
+    let rules = [];
+    let autoRunning = false; let pollTimer = null; let lastUpdateId = Number(localStorage.getItem('tg_offset')||0);
+    let selfUser = null; // from getMe
+    const replyCooldownMs = 3000; // basic flood control per chat
+    const lastReplyAt = new Map();
+
+    function renderRules(){
+      const list = document.getElementById('rulesList');
+      if(!list) return;
+      list.innerHTML = '';
+      if(!rules.length){ list.innerHTML = '<p class="text-sm text-zinc-500">No rules yet. Create your first rule below.</p>'; return; }
+      rules.forEach((r, i)=>{
+        const row = document.createElement('div');
+        row.className = 'flex items-start justify-between gap-3 py-2 border-b border-zinc-200/60 dark:border-zinc-800/60';
+        row.innerHTML = `
+          <div class="text-sm">
+            <div class="font-medium">${r.type.toUpperCase()} <span class="text-zinc-400">→</span> <code class="text-xs">${escapeHtml(r.pattern)}</code></div>
+            <div class="text-zinc-500 mt-1">Reply: <span class="text-zinc-300 dark:text-zinc-200">${escapeHtml(r.reply).slice(0,180)}${r.reply.length>180?'…':''}</span> ${r.pm?`<span class='text-xs text-zinc-400'>(pm:${r.pm})</span>`:''}</div>
+            ${r.scope?`<div class='text-zinc-500 text-xs mt-1'>Scope: ${r.scope}</div>`:''}
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="px-3 py-1.5 rounded-xl hairline bg-zinc-100/70 dark:bg-zinc-800/60 text-xs" onclick="toggleRule(${i})">${r.enabled? 'Disable':'Enable'}</button>
+            <button class="px-3 py-1.5 rounded-xl hairline bg-rose-600/90 text-white text-xs" onclick="deleteRule(${i})">Delete</button>
+          </div>`;
+        list.appendChild(row);
+      });
+    }
+
+    function escapeHtml(s){ return s.replace(/[&<>"]+/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+    function persistRules(){ localStorage.setItem('tg_rules', JSON.stringify(rules)); renderRules(); }
+
+    function addRule(){
+      const type = document.getElementById('ruleType').value;
+      const pattern = document.getElementById('rulePattern').value.trim();
+      const reply = document.getElementById('ruleReply').value;
+      const pm = document.getElementById('ruleParseMode').value || undefined;
+      const scope = document.getElementById('ruleScope').value; // all/private/group/channel
+      if(!pattern || !reply) return toast('Pattern and reply required', 'warn');
+      rules.push({type, pattern, reply, pm, scope, enabled:true});
+      persistRules();
+      document.getElementById('rulePattern').value = '';
+      document.getElementById('ruleReply').value = '';
+      toast('Rule added', 'success');
+    }
+
+    function toggleRule(i){ rules[i].enabled = !rules[i].enabled; persistRules(); }
+    function deleteRule(i){ rules.splice(i,1); persistRules(); }
+
+    function ruleMatches(text, chat, r){
+      if(!r.enabled) return false;
+      if(r.scope && r.scope!=='all'){
+        const t = chat.type; // private, group, supergroup, channel
+        if(r.scope==='private' && t!=='private') return false;
+        if(r.scope==='group' && (t!=='group' && t!=='supergroup')) return false;
+        if(r.scope==='channel' && t!=='channel') return false;
+      }
+      if(!text) return false;
+      switch(r.type){
+        case 'contains': return text.toLowerCase().includes(r.pattern.toLowerCase());
+        case 'equals': return text.trim() === r.pattern.trim();
+        case 'regex':
+          try{ return new RegExp(r.pattern, 'i').test(text);}catch{ return false; }
+        default: return false;
+      }
+    }
+
+    async function startAutoReply(){
+      if(autoRunning) return; // already running
+      const token = document.getElementById('botToken').value.trim();
+      if(!token) return toast('Token required', 'warn');
+      autoRunning = true;
+      document.getElementById('autoStatusPill').className = pillBase + ' bg-emerald-500/90 text-white';
+      document.getElementById('autoStart').disabled = true;
+      document.getElementById('autoStop').disabled = false;
+      pollLoop();
+      toast('Auto reply started', 'success');
+    }
+
+    function stopAutoReply(){
+      autoRunning = false;
+      if(pollTimer) { clearTimeout(pollTimer); pollTimer=null; }
+      document.getElementById('autoStatusPill').className = pillBase + ' bg-zinc-300/60 text-zinc-800';
+      document.getElementById('autoStart').disabled = false;
+      document.getElementById('autoStop').disabled = true;
+      toast('Auto reply stopped', 'info');
+    }
+
+    async function pollLoop(){
+      if(!autoRunning) return;
+      const token = document.getElementById('botToken').value.trim();
+      try{
+        const updates = await apiCall(token, 'getUpdates', {offset: lastUpdateId? lastUpdateId+1: undefined, timeout: 20, allowed_updates:["message","channel_post"]});
+        if(Array.isArray(updates)){
+          for(const u of updates){
+            lastUpdateId = u.update_id; localStorage.setItem('tg_offset', String(lastUpdateId));
+            await handleUpdate(u, token);
+          }
+        }
+      }catch(e){ setLog(`Auto error: ${e.message}`); }
+      finally{ pollTimer = setTimeout(pollLoop, 1000); }
+    }
+
+    async function handleUpdate(u, token){
+      const msg = u.message || u.channel_post; if(!msg) return;
+      if(msg.from && msg.from.is_bot) return; // ignore bots (incl. self)
+      const text = msg.text || msg.caption || '';
+      const chat = msg.chat || {id: msg.sender_chat?.id, type: 'channel'};
+      if(!text) return;
+
+      // cooldown per chat
+      const last = lastReplyAt.get(chat.id) || 0;
+      if(Date.now()-last < replyCooldownMs) return;
+
+      // find first matching rule
+      const r = rules.find(R=>ruleMatches(text, chat, R));
+      if(!r) return;
+
+      try{
+        const payload = { chat_id: chat.id, text: r.reply, parse_mode: r.pm || undefined };
+        const res = await apiCall(token, 'sendMessage', payload);
+        setLog({autoReplyTo: chat.id, matchedRule: r, result: res});
+        lastReplyAt.set(chat.id, Date.now());
+      }catch(e){ setLog(`Auto reply send error: ${e.message}`); }
+    }
+
     function setLog(v){ document.getElementById('result').textContent = typeof v==='string' ? v : JSON.stringify(v, null, 2); }
     function toggleToken(){ const el = document.getElementById("botToken"); el.type = el.type === "password" ? "text" : "password"; }
 
@@ -144,6 +269,7 @@
         <a class="hover:text-black dark:hover:text-white" href="#connect">Connect</a>
         <a class="hover:text-black dark:hover:text-white" href="#send-text">Text</a>
         <a class="hover:text-black dark:hover:text-white" href="#send-photo">Media</a>
+        <a class="hover:text-black dark:hover:text-white" href="#auto">Auto</a>
         <a class="hover:text-black dark:hover:text-white" href="#logs">Logs</a>
       </nav>
     </div>
@@ -154,7 +280,7 @@
     <div class="grid md:grid-cols-2 gap-6 items-center">
       <div>
         <h1 class="text-4xl md:text-6xl font-semibold leading-tight tracking-tight">Say it beautifully.<br/><span class="bg-clip-text text-transparent bg-gradient-to-r from-black via-zinc-600 to-zinc-400 dark:from-white dark:via-zinc-300 dark:to-zinc-500">Send with your Telegram bot.</span></h1>
-        <p class="mt-4 text-zinc-600 dark:text-zinc-400 text-lg">A minimalist, Apple‑inspired control panel with frosted glass cards, subtle gradients, and crisp type.</p>
+        <p class="mt-4 text-zinc-600 dark:text-zinc-400 text-lg">Apple‑inspired panel with frosted glass cards, subtle gradients, and crisp type.</p>
         <div class="mt-5 flex items-center gap-3">
           <span id="statusPill" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-300/60 text-zinc-800 shadow-sm ring-1 ring-white/10">
             <span class="inline-block w-1.5 h-1.5 rounded-full bg-current"></span>
@@ -238,13 +364,78 @@
       </div>
     </div>
 
+    <!-- Auto Reply Section -->
+    <div id="auto" class="relative glass hairline rounded-3xl p-6 bg-white/60 dark:bg-zinc-900/40 shadow-xl mt-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-semibold">Auto Reply (Rules)</h2>
+          <p class="text-sm text-zinc-600 dark:text-zinc-400 mt-1">Client‑side polling via <code>getUpdates</code>. Keep this tab open while running.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="autoStatusPill" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-300/60 text-zinc-800 shadow-sm ring-1 ring-white/10">Idle</span>
+          <button id="autoStart" onclick="startAutoReply()" class="btn px-3 py-2 rounded-2xl bg-emerald-600 text-white">Start</button>
+          <button id="autoStop" onclick="stopAutoReply()" class="btn px-3 py-2 rounded-2xl bg-zinc-700 text-white" disabled>Stop</button>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <h3 class="font-medium">Rules</h3>
+        <div id="rulesList" class="mt-2"></div>
+      </div>
+
+      <div class="mt-6 grid gap-3">
+        <h3 class="font-medium">Create Rule</h3>
+        <div class="grid md:grid-cols-4 gap-3">
+          <div>
+            <label class="block text-xs text-zinc-600 dark:text-zinc-400">Match Type</label>
+            <select id="ruleType" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus">
+              <option value="contains">contains</option>
+              <option value="equals">equals</option>
+              <option value="regex">regex</option>
+            </select>
+          </div>
+          <div class="md:col-span-3">
+            <label class="block text-xs text-zinc-600 dark:text-zinc-400">Pattern</label>
+            <input id="rulePattern" placeholder="e.g. hello | ^/start$" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus"/>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-zinc-600 dark:text-zinc-400">Reply Message</label>
+          <textarea id="ruleReply" rows="3" placeholder="Your reply…" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus"></textarea>
+        </div>
+        <div class="grid md:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs text-zinc-600 dark:text-zinc-400">Parse Mode</label>
+            <select id="ruleParseMode" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus">
+              <option value="">(none)</option>
+              <option>MarkdownV2</option>
+              <option>HTML</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-zinc-600 dark:text-zinc-400">Scope</label>
+            <select id="ruleScope" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus">
+              <option value="all">all chats</option>
+              <option value="private">private only</option>
+              <option value="group">groups only</option>
+              <option value="channel">channels only</option>
+            </select>
+          </div>
+          <div class="flex items-end">
+            <button onclick="addRule()" class="btn px-4 py-2 rounded-2xl bg-blue-600 text-white w-full">Add Rule</button>
+          </div>
+        </div>
+        <p class="text-xs text-zinc-500 mt-1">Tip: Use <code>regex</code> for advanced patterns. Example: <code>^/help(?:@yourbot)?$</code></p>
+      </div>
+    </div>
+
     <div id="logs" class="relative glass hairline rounded-3xl p-6 bg-white/60 dark:bg-zinc-900/40 shadow-xl mt-6">
       <div class="flex items-center justify-between">
         <h2 class="text-xl font-semibold">Result / Logs</h2>
         <button onclick="document.getElementById('result').textContent=''" class="btn px-3 py-1.5 rounded-xl hairline bg-zinc-100/80 dark:bg-zinc-800/70">Clear</button>
       </div>
       <pre id="result" class="mt-3 whitespace-pre-wrap text-sm"></pre>
-      <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-3">Heads up: This panel calls Telegram's Bot API from your browser. If your browser blocks cross‑origin requests, run it behind a tiny proxy. Never share your bot token publicly.</p>
+      <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-3">Heads up: This panel calls Telegram's Bot API from your browser. If your browser blocks cross‑origin requests, run it behind a tiny proxy. Never share your bot token publicly. For production, prefer a webhook server for reliability.</p>
     </div>
   </main>
   <footer class="max-w-6xl mx-auto px-6 pb-10 text-xs text-zinc-500 dark:text-zinc-400">Designed with an Apple‑inspired aesthetic. No Apple assets or trademarks used.</footer>
