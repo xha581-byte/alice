@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Telegram Bot — Control Panel (AI)</title>
+  <title>Telegram Bot — Control Panel</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root{ color-scheme: light dark; }
@@ -19,9 +19,9 @@
   </style>
   <script>
     // ---------------- Toasts
-    function toast(msg, type = 'info') {
-      const colors = {info: 'bg-blue-600', success: 'bg-green-600', warn: 'bg-amber-600', error: 'bg-red-600'};
-      const el = document.createElement('div');
+    function toast(msg, type = "info") {
+      const colors = {info: "bg-blue-600", success: "bg-green-600", warn: "bg-amber-600", error: "bg-red-600"};
+      const el = document.createElement("div");
       el.className = `${colors[type]} text-white px-4 py-2 rounded-2xl shadow-2xl fixed bottom-6 right-6 z-50`;
       el.style.opacity=0; el.textContent = msg;
       document.body.appendChild(el);
@@ -32,7 +32,7 @@
     // ---------------- Core Bot API helper
     async function apiCall(token, method, payload) {
       const url = `https://api.telegram.org/bot${token}/${method}`;
-      const res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload || {})});
+      const res = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload || {})});
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok === false) throw new Error(data?.description || `HTTP ${res.status}`);
       return data.result ?? data;
@@ -40,29 +40,29 @@
 
     // ---------------- Local prefs
     function savePrefs() {
-      const token = document.getElementById('botToken').value.trim();
-      const chatId = document.getElementById('chatId').value.trim();
-      const parseMode = document.getElementById('parseMode').value;
-      if (token) localStorage.setItem('tg_token', token);
-      if (chatId) localStorage.setItem('tg_chat', chatId);
-      localStorage.setItem('tg_parse', parseMode);
-      toast('Saved to this browser', 'success');
+      const token = document.getElementById("botToken").value.trim();
+      const chatId = document.getElementById("chatId").value.trim();
+      const parseMode = document.getElementById("parseMode").value;
+      if (token) localStorage.setItem("tg_token", token);
+      if (chatId) localStorage.setItem("tg_chat", chatId);
+      localStorage.setItem("tg_parse", parseMode);
+      toast("Saved to this browser", "success");
     }
 
     function loadPrefs() {
-      const token = localStorage.getItem('tg_token') || '';
-      const chatId = localStorage.getItem('tg_chat') || '';
-      const parseMode = localStorage.getItem('tg_parse') || 'MarkdownV2';
-      document.getElementById('botToken').value = token;
-      document.getElementById('chatId').value = chatId;
-      document.getElementById('parseMode').value = parseMode;
+      const token = localStorage.getItem("tg_token") || "";
+      const chatId = localStorage.getItem("tg_chat") || "";
+      const parseMode = localStorage.getItem("tg_parse") || "MarkdownV2";
+      document.getElementById("botToken").value = token;
+      document.getElementById("chatId").value = chatId;
+      document.getElementById("parseMode").value = parseMode;
       // Load rules
       try{ rules = JSON.parse(localStorage.getItem('tg_rules')||'[]'); }catch{ rules = []; }
       renderRules();
       if (token) fetchMe();
     }
 
-    // ---------------- AI Config
+    // ---------------- AI Config (Step 1)
     function loadAIConfig(){
       const apiBase = localStorage.getItem('ai_base') || 'https://api.openai.com/v1';
       const apiKey = localStorage.getItem('ai_key') || '';
@@ -101,62 +101,64 @@
       return text;
     }
 
-    // ---------------- Status
+    // ---------------- Bot status
     async function fetchMe() {
-      const token = document.getElementById('botToken').value.trim();
-      const pill = document.getElementById('statusPill');
-      const status = document.getElementById('botStatus');
-      if (!token){ status.textContent = 'Enter a token and test'; pill.className = pillBase + ' bg-zinc-300/60 text-zinc-800'; return; }
-      status.textContent = 'Testing…';
+      const token = document.getElementById("botToken").value.trim();
+      const pill = document.getElementById("statusPill");
+      const status = document.getElementById("botStatus");
+      if (!token){ status.textContent = "Enter a token and test"; pill.className = pillBase + ' bg-zinc-300/60 text-zinc-800'; return; }
+      status.textContent = "Testing…";
       try {
-        const me = await apiCall(token, 'getMe', {});
-        status.innerHTML = `Connected as <b>${me.first_name || 'Bot'}</b> <span class='text-zinc-400'>@${me.username || 'unknown'}</span>`;
+        const me = await apiCall(token, "getMe", {});
+        status.innerHTML = `Connected as <b>${me.first_name || 'Bot'}</b> <span class="text-zinc-400">@${me.username || 'unknown'}</span>`;
         pill.className = pillBase + ' bg-emerald-500/90 text-white';
         selfUser = me;
-        toast('Bot connected', 'success');
+        toast("Bot connected", "success");
       } catch (e) {
-        status.innerHTML = `<span class='text-red-600'>${e.message}</span>`;
+        status.innerHTML = `<span class="text-red-600">${e.message}</span>`;
         pill.className = pillBase + ' bg-rose-500/90 text-white';
-        toast(e.message, 'error');
+        toast(e.message, "error");
       }
     }
 
-    // ---------------- Manual senders
+    // ---------------- Manual Senders
     async function sendMessage() {
-      const token = document.getElementById('botToken').value.trim();
-      const chatId = document.getElementById('chatId').value.trim();
-      const text = document.getElementById('message').value;
-      const parseMode = document.getElementById('parseMode').value;
-      const disablePreview = document.getElementById('disablePreview').checked;
-      const disableNotif = document.getElementById('disableNotif').checked;
-      if (!token) return toast('Token required', 'warn');
-      if (!chatId) return toast('Chat ID or @channel required', 'warn');
-      if (!text) return toast('Write a message', 'warn');
-      const btn = document.getElementById('sendBtn'); btn.disabled = true; btn.classList.add('opacity-60');
+      const token = document.getElementById("botToken").value.trim();
+      const chatId = document.getElementById("chatId").value.trim();
+      const text = document.getElementById("message").value;
+      const parseMode = document.getElementById("parseMode").value;
+      const disablePreview = document.getElementById("disablePreview").checked;
+      const disableNotif = document.getElementById("disableNotif").checked;
+      if (!token) return toast("Token required", "warn");
+      if (!chatId) return toast("Chat ID or @channel required", "warn");
+      if (!text) return toast("Write a message", "warn");
+      const btn = document.getElementById("sendBtn");
+      btn.disabled = true; btn.classList.add("opacity-60");
       try {
-        const res = await apiCall(token, 'sendMessage', {chat_id: chatId, text, parse_mode: parseMode || undefined, disable_web_page_preview: disablePreview || undefined, disable_notification: disableNotif || undefined});
-        setLog(res); toast('Message sent', 'success');
-      } catch(e){ setLog(`Error: ${e.message}`); toast(e.message, 'error'); }
-      finally{ btn.disabled=false; btn.classList.remove('opacity-60'); }
+        const res = await apiCall(token, "sendMessage", {chat_id: chatId, text, parse_mode: parseMode || undefined, disable_web_page_preview: disablePreview || undefined, disable_notification: disableNotif || undefined});
+        setLog(res); toast("Message sent", "success");
+      } catch(e){ setLog(`Error: ${e.message}`); toast(e.message, "error"); }
+      finally{ btn.disabled=false; btn.classList.remove("opacity-60"); }
     }
     async function sendPhoto() {
-      const token = document.getElementById('botToken').value.trim();
-      const chatId = document.getElementById('chatId').value.trim();
-      const photoUrl = document.getElementById('photoUrl').value.trim();
-      const caption = document.getElementById('photoCaption').value;
-      const parseMode = document.getElementById('parseMode').value;
-      if (!token) return toast('Token required', 'warn');
-      if (!chatId) return toast('Chat ID required', 'warn');
-      if (!photoUrl) return toast('Photo URL required', 'warn');
-      const btn = document.getElementById('sendPhotoBtn'); btn.disabled = true; btn.classList.add('opacity-60');
+      const token = document.getElementById("botToken").value.trim();
+      const chatId = document.getElementById("chatId").value.trim();
+      const photoUrl = document.getElementById("photoUrl").value.trim();
+      const caption = document.getElementById("photoCaption").value;
+      const parseMode = document.getElementById("parseMode").value;
+      if (!token) return toast("Token required", "warn");
+      if (!chatId) return toast("Chat ID required", "warn");
+      if (!photoUrl) return toast("Photo URL required", "warn");
+      const btn = document.getElementById("sendPhotoBtn");
+      btn.disabled = true; btn.classList.add("opacity-60");
       try {
-        const res = await apiCall(token, 'sendPhoto', {chat_id: chatId, photo: photoUrl, caption: caption || undefined, parse_mode: caption ? (parseMode || undefined) : undefined});
-        setLog(res); toast('Photo sent', 'success');
-      } catch(e){ setLog(`Error: ${e.message}`); toast(e.message, 'error'); }
-      finally{ btn.disabled=false; btn.classList.remove('opacity-60'); }
+        const res = await apiCall(token, "sendPhoto", {chat_id: chatId, photo: photoUrl, caption: caption || undefined, parse_mode: caption ? (parseMode || undefined) : undefined});
+        setLog(res); toast("Photo sent", "success");
+      } catch(e){ setLog(`Error: ${e.message}`); toast(e.message, "error"); }
+      finally{ btn.disabled=false; btn.classList.remove("opacity-60"); }
     }
 
-    // ---------------- Auto Reply Engine (getUpdates)
+    // ---------------- Auto Reply Engine (Steps 2-4)
     let rules = [];
     let autoRunning = false; let pollTimer = null; let lastUpdateId = Number(localStorage.getItem('tg_offset')||0);
     let selfUser = null;
@@ -283,7 +285,7 @@
     }
 
     function setLog(v){ document.getElementById('result').textContent = typeof v==='string' ? v : JSON.stringify(v, null, 2); }
-    function toggleToken(){ const el = document.getElementById('botToken'); el.type = el.type === 'password' ? 'text' : 'password'; }
+    function toggleToken(){ const el = document.getElementById("botToken"); el.type = el.type === "password" ? "text" : "password"; }
 
     const pillBase = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium shadow-sm ring-1 ring-white/10';
     document.addEventListener('DOMContentLoaded', ()=>{ loadPrefs(); loadAIConfig(); });
@@ -341,7 +343,7 @@
     </div>
   </section>
 
-  <!-- Main -->
+  <!-- Main cards -->
   <main class="max-w-6xl mx-auto px-6 pb-16">
     <div id="connect" class="grid md:grid-cols-2 gap-6 mt-10">
       <div class="relative glass hairline rounded-3xl p-6 bg-white/60 dark:bg-zinc-900/40 shadow-xl">
@@ -368,6 +370,7 @@
           </div>
         </div>
       </div>
+
       <div id="send-text" class="relative glass hairline rounded-3xl p-6 bg-white/60 dark:bg-zinc-900/40 shadow-xl">
         <h2 class="text-xl font-semibold">Send Text Message</h2>
         <p class="text-sm text-zinc-600 dark:text-zinc-400 mt-1">Supports MarkdownV2 or HTML formatting.</p>
@@ -396,7 +399,7 @@
       </div>
     </div>
 
-    <!-- AI Config Section -->
+    <!-- AI Settings (Step 1 UI) -->
     <div id="ai" class="relative glass hairline rounded-3xl p-6 bg-white/60 dark:bg-zinc-900/40 shadow-xl mt-6">
       <div class="flex items-center justify-between">
         <div>
@@ -438,7 +441,7 @@
       </div>
     </div>
 
-    <!-- Auto Reply Section -->
+    <!-- Auto Reply Section (Steps 2-4 UI) -->
     <div id="auto" class="relative glass hairline rounded-3xl p-6 bg-white/60 dark:bg-zinc-900/40 shadow-xl mt-6">
       <div class="flex items-center justify-between">
         <div>
@@ -505,12 +508,13 @@
         </div>
         <div id="ruleAIWrap" class="mt-3 hidden">
           <label class="block text-xs text-zinc-600 dark:text-zinc-400">AI Prompt Template</label>
-          <textarea id="rulePrompt" rows="3" placeholder="e.g. Reply as a friendly brand assistant to: {{text}}" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus"></textarea>
+          <textarea id="rulePrompt" rows="3" placeholder="Reply like a friendly brand assistant. Keep under 2 lines. Message: {{text}}" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus"></textarea>
           <p class="text-xs text-zinc-500 mt-1">Placeholders: <code>{{text}}</code>, <code>{{username}}</code>, <code>{{fname}}</code>, <code>{{lname}}</code>, <code>{{chat_type}}</code></p>
         </div>
         <div class="flex items-end">
           <button onclick="addRule()" class="btn px-4 py-2 rounded-2xl bg-blue-600 text-white">Add Rule</button>
         </div>
+        <p class="text-xs text-zinc-500 mt-1">Tip: Use <code>regex</code> for advanced patterns. Example: <code>^/help(?:@yourbot)?$</code></p>
       </div>
     </div>
 
