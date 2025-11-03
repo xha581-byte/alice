@@ -1,38 +1,52 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Telegram Bot Control Panel</title>
+  <title>Telegram Bot — Control Panel</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{
+      color-scheme: light dark;
+    }
+    html,body{height:100%}
+    /* Apple-like typography */
+    body{font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif}
+    /* Frosted glass card */
+    .glass{backdrop-filter: saturate(180%) blur(18px); -webkit-backdrop-filter: saturate(180%) blur(18px)}
+    /* Soft gradient background reminiscent of apple.com sections */
+    .bg-apple{
+      background: radial-gradient(1200px 800px at 100% 0%, rgba(56,189,248,.18), transparent 60%),
+                  radial-gradient(1200px 800px at 0% 100%, rgba(167,139,250,.14), transparent 60%),
+                  linear-gradient(180deg, rgba(0,0,0,.03), transparent 40%);
+    }
+    /* Subtle hairline borders */
+    .hairline{border: 1px solid rgba(255,255,255,.12); border-color: rgb(228 228 231 / .6)}
+    @media (prefers-color-scheme: dark){
+      .hairline{border-color: rgb(63 63 70 / .6)}
+    }
+    /* Buttons micro-interactions */
+    .btn{transition: transform .15s ease, filter .2s ease}
+    .btn:active{transform: translateY(1px) scale(.99)}
+    /* Focus rings */
+    .ring-focus:focus{outline: none; box-shadow: 0 0 0 4px rgba(59,130,246,.35)}
+  </style>
   <script>
-    // Simple helper for toasts
+    // Toasts
     function toast(msg, type = "info") {
-      const colors = {
-        info: "bg-blue-600",
-        success: "bg-green-600",
-        warn: "bg-amber-600",
-        error: "bg-red-600",
-      };
+      const colors = {info: "bg-blue-600", success: "bg-green-600", warn: "bg-amber-600", error: "bg-red-600"};
       const el = document.createElement("div");
-      el.className = `${colors[type]} text-white px-4 py-2 rounded-xl shadow-lg fixed bottom-6 right-6 z-50 animate-bounce`;
-      el.textContent = msg;
+      el.className = `${colors[type]} text-white px-4 py-2 rounded-2xl shadow-2xl fixed bottom-6 right-6 z-50`; el.style.opacity=0; el.textContent = msg;
       document.body.appendChild(el);
-      setTimeout(() => el.remove(), 2200);
+      requestAnimationFrame(()=>{el.style.transition='opacity .25s'; el.style.opacity=1});
+      setTimeout(()=>{el.style.opacity=0; setTimeout(()=>el.remove(),250)}, 2200);
     }
 
     async function apiCall(token, method, payload) {
       const url = `https://api.telegram.org/bot${token}/${method}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload || {}),
-      });
+      const res = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload || {})});
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.ok === false) {
-        const desc = data?.description || `HTTP ${res.status}`;
-        throw new Error(desc);
-      }
+      if (!res.ok || data.ok === false) throw new Error(data?.description || `HTTP ${res.status}`);
       return data.result ?? data;
     }
 
@@ -43,7 +57,7 @@
       if (token) localStorage.setItem("tg_token", token);
       if (chatId) localStorage.setItem("tg_chat", chatId);
       localStorage.setItem("tg_parse", parseMode);
-      toast("Saved locally (browser only)", "success");
+      toast("Saved to this browser", "success");
     }
 
     function loadPrefs() {
@@ -58,18 +72,18 @@
 
     async function fetchMe() {
       const token = document.getElementById("botToken").value.trim();
+      const pill = document.getElementById("statusPill");
       const status = document.getElementById("botStatus");
-      if (!token) {
-        status.innerHTML = `<span class="text-amber-600">Enter a token, then Test</span>`;
-        return;
-      }
+      if (!token){ status.textContent = "Enter a token and test"; pill.className = pillBase + ' bg-zinc-300/60 text-zinc-800'; return; }
       status.textContent = "Testing…";
       try {
         const me = await apiCall(token, "getMe", {});
-        status.innerHTML = `✅ <b>${me.first_name || "Bot"}</b> (<code>@${me.username || "unknown"}</code>)`;
+        status.innerHTML = `Connected as <b>${me.first_name || 'Bot'}</b> <span class="text-zinc-400">@${me.username || 'unknown'}</span>`;
+        pill.className = pillBase + ' bg-emerald-500/90 text-white';
         toast("Bot connected", "success");
       } catch (e) {
-        status.innerHTML = `❌ <span class="text-red-600">${e.message}</span>`;
+        status.innerHTML = `<span class="text-red-600">${e.message}</span>`;
+        pill.className = pillBase + ' bg-rose-500/90 text-white';
         toast(e.message, "error");
       }
     }
@@ -81,30 +95,16 @@
       const parseMode = document.getElementById("parseMode").value;
       const disablePreview = document.getElementById("disablePreview").checked;
       const disableNotif = document.getElementById("disableNotif").checked;
-
       if (!token) return toast("Token required", "warn");
       if (!chatId) return toast("Chat ID or @channel required", "warn");
-      if (!text) return toast("Write a message first", "warn");
-
+      if (!text) return toast("Write a message", "warn");
       const btn = document.getElementById("sendBtn");
       btn.disabled = true; btn.classList.add("opacity-60");
       try {
-        const payload = {
-          chat_id: chatId,
-          text,
-          parse_mode: parseMode || undefined,
-          disable_web_page_preview: disablePreview || undefined,
-          disable_notification: disableNotif || undefined,
-        };
-        const res = await apiCall(token, "sendMessage", payload);
-        document.getElementById("result").textContent = JSON.stringify(res, null, 2);
-        toast("Message sent", "success");
-      } catch (e) {
-        document.getElementById("result").textContent = `Error: ${e.message}`;
-        toast(e.message, "error");
-      } finally {
-        btn.disabled = false; btn.classList.remove("opacity-60");
-      }
+        const res = await apiCall(token, "sendMessage", {chat_id: chatId, text, parse_mode: parseMode || undefined, disable_web_page_preview: disablePreview || undefined, disable_notification: disableNotif || undefined});
+        setLog(res); toast("Message sent", "success");
+      } catch(e){ setLog(`Error: ${e.message}`); toast(e.message, "error"); }
+      finally{ btn.disabled=false; btn.classList.remove("opacity-60"); }
     }
 
     async function sendPhoto() {
@@ -113,110 +113,140 @@
       const photoUrl = document.getElementById("photoUrl").value.trim();
       const caption = document.getElementById("photoCaption").value;
       const parseMode = document.getElementById("parseMode").value;
-
       if (!token) return toast("Token required", "warn");
       if (!chatId) return toast("Chat ID required", "warn");
       if (!photoUrl) return toast("Photo URL required", "warn");
-
       const btn = document.getElementById("sendPhotoBtn");
       btn.disabled = true; btn.classList.add("opacity-60");
       try {
-        const payload = {
-          chat_id: chatId,
-          photo: photoUrl,
-          caption: caption || undefined,
-          parse_mode: caption ? (parseMode || undefined) : undefined,
-        };
-        const res = await apiCall(token, "sendPhoto", payload);
-        document.getElementById("result").textContent = JSON.stringify(res, null, 2);
-        toast("Photo sent", "success");
-      } catch (e) {
-        document.getElementById("result").textContent = `Error: ${e.message}`;
-        toast(e.message, "error");
-      } finally {
-        btn.disabled = false; btn.classList.remove("opacity-60");
-      }
+        const res = await apiCall(token, "sendPhoto", {chat_id: chatId, photo: photoUrl, caption: caption || undefined, parse_mode: caption ? (parseMode || undefined) : undefined});
+        setLog(res); toast("Photo sent", "success");
+      } catch(e){ setLog(`Error: ${e.message}`); toast(e.message, "error"); }
+      finally{ btn.disabled=false; btn.classList.remove("opacity-60"); }
     }
 
-    function toggleToken() {
-      const el = document.getElementById("botToken");
-      el.type = el.type === "password" ? "text" : "password";
-    }
+    function setLog(v){ document.getElementById('result').textContent = typeof v==='string' ? v : JSON.stringify(v, null, 2); }
+    function toggleToken(){ const el = document.getElementById("botToken"); el.type = el.type === "password" ? "text" : "password"; }
 
+    const pillBase = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium shadow-sm ring-1 ring-white/10';
     document.addEventListener("DOMContentLoaded", loadPrefs);
   </script>
 </head>
-<body class="min-h-screen bg-slate-50 text-slate-900">
-  <div class="max-w-3xl mx-auto p-6">
-    <header class="mb-6">
-      <h1 class="text-3xl font-bold tracking-tight">Telegram Bot <span class="text-blue-600">Control Panel</span></h1>
-      <p class="text-slate-600 mt-1">Send messages via your bot token. Nothing is uploaded; token is stored in your browser if you hit Save.</p>
-    </header>
+<body class="bg-zinc-50 dark:bg-black text-zinc-900 dark:text-zinc-100 bg-apple">
+  <!-- Header / Nav -->
+  <header class="sticky top-0 z-40 backdrop-blur supports-[backdrop-filter]:glass">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black grid place-items-center text-sm font-bold">TG</div>
+        <span class="text-sm tracking-wide text-zinc-600 dark:text-zinc-300">Telegram Bot Panel</span>
+      </div>
+      <nav class="hidden md:flex items-center gap-6 text-sm text-zinc-600 dark:text-zinc-300">
+        <a class="hover:text-black dark:hover:text-white" href="#connect">Connect</a>
+        <a class="hover:text-black dark:hover:text-white" href="#send-text">Text</a>
+        <a class="hover:text-black dark:hover:text-white" href="#send-photo">Media</a>
+        <a class="hover:text-black dark:hover:text-white" href="#logs">Logs</a>
+      </nav>
+    </div>
+  </header>
 
-    <div class="grid gap-4 md:grid-cols-2">
-      <div class="bg-white rounded-2xl shadow p-5">
-        <h2 class="font-semibold mb-3">Connection</h2>
-        <label class="block text-sm font-medium text-slate-700">Bot Token</label>
-        <div class="flex gap-2 mt-1">
-          <input id="botToken" type="password" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" class="w-full rounded-xl border-slate-300 focus:ring-2 focus:ring-blue-500 px-3 py-2" />
-          <button onclick="toggleToken()" class="px-3 py-2 rounded-xl border bg-slate-100">👁️</button>
+  <!-- Hero -->
+  <section class="max-w-6xl mx-auto px-6 pt-10 md:pt-16">
+    <div class="grid md:grid-cols-2 gap-6 items-center">
+      <div>
+        <h1 class="text-4xl md:text-6xl font-semibold leading-tight tracking-tight">Say it beautifully.<br/><span class="bg-clip-text text-transparent bg-gradient-to-r from-black via-zinc-600 to-zinc-400 dark:from-white dark:via-zinc-300 dark:to-zinc-500">Send with your Telegram bot.</span></h1>
+        <p class="mt-4 text-zinc-600 dark:text-zinc-400 text-lg">A minimalist, Apple‑inspired control panel with frosted glass cards, subtle gradients, and crisp type.</p>
+        <div class="mt-5 flex items-center gap-3">
+          <span id="statusPill" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-300/60 text-zinc-800 shadow-sm ring-1 ring-white/10">
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-current"></span>
+            Status
+          </span>
+          <button onclick="fetchMe()" class="btn ring-focus px-4 py-2 rounded-full bg-zinc-900 text-white dark:bg-white dark:text-black hover:brightness-110">Test token</button>
         </div>
-        <div class="mt-3 flex items-center gap-2">
-          <button onclick="fetchMe()" class="px-4 py-2 rounded-xl bg-blue-600 text-white hover:brightness-110">Test Token</button>
-          <button onclick="savePrefs()" class="px-4 py-2 rounded-xl bg-slate-800 text-white hover:brightness-110">Save</button>
+      </div>
+      <div class="relative">
+        <div class="absolute -inset-6 md:-inset-8 bg-gradient-to-tr from-zinc-200/60 to-transparent dark:from-zinc-800/60 rounded-3xl blur-2xl"></div>
+        <div class="relative glass hairline rounded-3xl p-6 md:p-8 bg-white/60 dark:bg-zinc-900/40 shadow-2xl">
+          <p id="botStatus" class="text-sm text-zinc-700 dark:text-zinc-300">Not connected</p>
+          <div class="mt-3 grid gap-3">
+            <label class="text-xs font-medium text-zinc-600 dark:text-zinc-400">Bot Token</label>
+            <div class="flex gap-2">
+              <input id="botToken" type="password" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus" />
+              <button onclick="toggleToken()" class="btn px-3 py-2 rounded-2xl hairline bg-zinc-100/80 dark:bg-zinc-800/70">👁️</button>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="savePrefs()" class="btn px-4 py-2 rounded-2xl bg-zinc-900 text-white dark:bg-white dark:text-black hover:brightness-110">Save</button>
+            </div>
+          </div>
         </div>
-        <p id="botStatus" class="mt-3 text-sm text-slate-700">Not connected</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main cards -->
+  <main class="max-w-6xl mx-auto px-6 pb-16">
+    <div id="connect" class="grid md:grid-cols-2 gap-6 mt-10">
+      <div class="relative glass hairline rounded-3xl p-6 bg-white/60 dark:bg-zinc-900/40 shadow-xl">
+        <h2 class="text-xl font-semibold">Defaults</h2>
+        <p class="text-sm text-zinc-600 dark:text-zinc-400 mt-1">Set where and how your messages go.</p>
+        <div class="mt-4 grid gap-4">
+          <div>
+            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Chat ID or @channel</label>
+            <input id="chatId" type="text" placeholder="123456789 or @yourchannel" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus" />
+          </div>
+          <div class="grid md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Parse Mode</label>
+              <select id="parseMode" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus">
+                <option>MarkdownV2</option>
+                <option>HTML</option>
+                <option value="">(none)</option>
+              </select>
+            </div>
+            <div class="grid gap-2 mt-1">
+              <label class="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><input id="disablePreview" type="checkbox" class="rounded"/> Disable link previews</label>
+              <label class="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><input id="disableNotif" type="checkbox" class="rounded"/> Send silently</label>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="bg-white rounded-2xl shadow p-5">
-        <h2 class="font-semibold mb-3">Defaults</h2>
-        <label class="block text-sm font-medium text-slate-700">Chat ID or @channel</label>
-        <input id="chatId" type="text" placeholder="123456789 or @yourchannel" class="w-full rounded-xl border-slate-300 focus:ring-2 focus:ring-blue-500 px-3 py-2 mt-1" />
-        <div class="mt-3">
-          <label class="block text-sm font-medium text-slate-700">Parse Mode</label>
-          <select id="parseMode" class="w-full rounded-xl border-slate-300 px-3 py-2 mt-1">
-            <option>MarkdownV2</option>
-            <option>HTML</option>
-            <option value="">(none)</option>
-          </select>
-        </div>
-        <div class="mt-3 grid grid-cols-2 gap-3">
-          <label class="inline-flex items-center gap-2 text-sm"><input id="disablePreview" type="checkbox" class="rounded"/> Disable link previews</label>
-          <label class="inline-flex items-center gap-2 text-sm"><input id="disableNotif" type="checkbox" class="rounded"/> Send silently</label>
+      <div id="send-text" class="relative glass hairline rounded-3xl p-6 bg-white/60 dark:bg-zinc-900/40 shadow-xl">
+        <h2 class="text-xl font-semibold">Send Text Message</h2>
+        <p class="text-sm text-zinc-600 dark:text-zinc-400 mt-1">Supports MarkdownV2 or HTML formatting.</p>
+        <textarea id="message" rows="6" placeholder="Type your message…" class="mt-4 w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-3 ring-focus"></textarea>
+        <div class="mt-4 flex gap-3">
+          <button id="sendBtn" onclick="sendMessage()" class="btn px-5 py-2.5 rounded-2xl bg-blue-600 text-white hover:brightness-110">Send</button>
         </div>
       </div>
     </div>
 
-    <div class="bg-white rounded-2xl shadow p-5 mt-4">
-      <h2 class="font-semibold mb-3">Send Text Message</h2>
-      <textarea id="message" rows="5" placeholder="Type your message…" class="w-full rounded-xl border-slate-300 focus:ring-2 focus:ring-blue-500 px-3 py-2"></textarea>
-      <div class="mt-3 flex gap-3">
-        <button id="sendBtn" onclick="sendMessage()" class="px-5 py-2.5 rounded-xl bg-green-600 text-white hover:brightness-110">Send Message</button>
+    <div id="send-photo" class="relative glass hairline rounded-3xl p-6 bg-white/60 dark:bg-zinc-900/40 shadow-xl mt-6">
+      <h2 class="text-xl font-semibold">Send Photo (URL)</h2>
+      <p class="text-sm text-zinc-600 dark:text-zinc-400 mt-1">Drop a direct URL. Add a caption if you like.</p>
+      <div class="mt-4 grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Photo URL</label>
+          <input id="photoUrl" type="url" placeholder="https://example.com/image.jpg" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Caption (optional)</label>
+          <textarea id="photoCaption" rows="3" placeholder="Caption…" class="w-full rounded-2xl hairline bg-white/70 dark:bg-zinc-900/60 px-3 py-2 ring-focus"></textarea>
+        </div>
+      </div>
+      <div class="mt-4 flex gap-3">
+        <button id="sendPhotoBtn" onclick="sendPhoto()" class="btn px-5 py-2.5 rounded-2xl bg-indigo-600 text-white hover:brightness-110">Send Photo</button>
       </div>
     </div>
 
-    <div class="bg-white rounded-2xl shadow p-5 mt-4">
-      <h2 class="font-semibold mb-3">Send Photo (URL)</h2>
-      <label class="block text-sm font-medium text-slate-700">Photo URL</label>
-      <input id="photoUrl" type="url" placeholder="https://example.com/image.jpg" class="w-full rounded-xl border-slate-300 focus:ring-2 focus:ring-blue-500 px-3 py-2 mt-1" />
-      <label class="block text-sm font-medium text-slate-700 mt-3">Caption (optional)</label>
-      <textarea id="photoCaption" rows="3" placeholder="Caption…" class="w-full rounded-xl border-slate-300 focus:ring-2 focus:ring-blue-500 px-3 py-2"></textarea>
-      <div class="mt-3 flex gap-3">
-        <button id="sendPhotoBtn" onclick="sendPhoto()" class="px-5 py-2.5 rounded-xl bg-indigo-600 text-white hover:brightness-110">Send Photo</button>
-      </div>
-    </div>
-
-    <div class="bg-slate-900 text-slate-50 rounded-2xl p-5 mt-6">
+    <div id="logs" class="relative glass hairline rounded-3xl p-6 bg-white/60 dark:bg-zinc-900/40 shadow-xl mt-6">
       <div class="flex items-center justify-between">
-        <h3 class="font-semibold">Result / Logs</h3>
-        <button onclick="document.getElementById('result').textContent=''" class="px-3 py-1 rounded-lg bg-slate-700">Clear</button>
+        <h2 class="text-xl font-semibold">Result / Logs</h2>
+        <button onclick="document.getElementById('result').textContent=''" class="btn px-3 py-1.5 rounded-xl hairline bg-zinc-100/80 dark:bg-zinc-800/70">Clear</button>
       </div>
       <pre id="result" class="mt-3 whitespace-pre-wrap text-sm"></pre>
+      <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-3">Heads up: This panel calls Telegram's Bot API from your browser. If your browser blocks cross‑origin requests, run it behind a tiny proxy. Never share your bot token publicly.</p>
     </div>
-
-    <footer class="text-xs text-slate-500 mt-6">
-      <p><strong>Heads up:</strong> This panel calls Telegram's Bot API from your browser. If your browser blocks cross‑origin requests, you may need to run this from a simple backend proxy. Never share your bot token publicly.</p>
-    </footer>
-  </div>
+  </main>
+  <footer class="max-w-6xl mx-auto px-6 pb-10 text-xs text-zinc-500 dark:text-zinc-400">Designed with an Apple‑inspired aesthetic. No Apple assets or trademarks used.</footer>
 </body>
 </html>
