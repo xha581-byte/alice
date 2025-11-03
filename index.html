@@ -247,6 +247,28 @@
       document.getElementById('autoStop').disabled = true;
       toast('Auto reply stopped', 'info');
     }
+    async function getWebhookInfo(){
+      const token = document.getElementById('botToken').value.trim();
+      if(!token) return toast('Token required','warn');
+      try{
+        const info = await apiCall(token,'getWebhookInfo',{});
+        setLog({webhookInfo: info});
+        if(info.url) toast(`Webhook is set: ${info.url}`,'warn');
+        else toast('No webhook set','success');
+      }catch(e){ setLog(`Webhook info error: ${e.message}`); }
+    }
+
+    async function resetToPolling(){
+      const token = document.getElementById('botToken').value.trim();
+      if(!token) return toast('Token required','warn');
+      try{
+        await apiCall(token,'deleteWebhook',{drop_pending_updates:true});
+        localStorage.removeItem('tg_offset');
+        lastUpdateId = 0;
+        toast('Webhook removed. Polling ready.','success');
+      }catch(e){ setLog(`Reset error: ${e.message}`); toast(e.message,'error'); }
+    }
+
     async function pollLoop(){
       if(!autoRunning) return;
       const token = document.getElementById('botToken').value.trim();
@@ -452,6 +474,8 @@
           <span id="autoStatusPill" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-300/60 text-zinc-800 shadow-sm ring-1 ring-white/10">Idle</span>
           <button id="autoStart" onclick="startAutoReply()" class="btn px-3 py-2 rounded-2xl bg-emerald-600 text-white">Start</button>
           <button id="autoStop" onclick="stopAutoReply()" class="btn px-3 py-2 rounded-2xl bg-zinc-700 text-white" disabled>Stop</button>
+          <button onclick="getWebhookInfo()" class="btn px-3 py-2 rounded-2xl bg-zinc-100 dark:bg-zinc-800">Webhook?</button>
+          <button onclick="resetToPolling()" class="btn px-3 py-2 rounded-2xl bg-amber-600 text-white">Fix 409</button>
         </div>
       </div>
 
